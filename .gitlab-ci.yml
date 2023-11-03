@@ -1,0 +1,68 @@
+variables:
+
+  SSH_USER: ${SSH_USER}
+  SSH_HOST: ${EC2_HOST}
+  
+  DOCKER_IMAGE_NAME_APPOINTMENT_API: docker.io/umeshkumar01/appointments-api
+  DOCKER_IMAGE_NAME_DOCTOR_API: docker.io/umeshkumar01/doctor-api
+  DOCKER_IMAGE_NAME_PATIENT_API: docker.io/umeshkumar01/patient-api
+  DOCKER_IMAGE_NAME_FRONTEND: docker.io/umeshkumar01/frontend
+  DOCKER_TAG: ${CI_COMMIT_SHORT_SHA}
+  DOCKER_REGISTRY_URL_AUTH: https://index.docker.io/v1/
+
+default:
+  image: docker:24.0.5
+services:
+  - docker:24.0.5-dind
+before_script:
+  - docker info
+
+stages:
+  - build
+  - test
+  - deploy
+
+build-appontment-api:
+  stage: build
+  script:
+    - docker login -u ${DOCKER_HUB_USER_NAME} -p ${DOCKER_HUB_PASSWD}
+    - docker build -f appointments-api.Dockerfile -t ${DOCKER_IMAGE_NAME_APPOINTMENT_API}:${DOCKER_TAG} .
+    - docker push ${DOCKER_IMAGE_NAME_APPOINTMENT_API}:${DOCKER_TAG}
+
+build-doctor-api:
+  stage: build
+  script:
+    - docker login -u ${DOCKER_HUB_USER_NAME} -p ${DOCKER_HUB_PASSWD}
+    - docker build -f doctor-api.Dockerfile -t ${DOCKER_IMAGE_NAME_DOCTOR_API}:${DOCKER_TAG} .
+    - docker push ${DOCKER_IMAGE_NAME_DOCTOR_API}:${DOCKER_TAG}
+
+build-patient-api:
+  stage: build
+  script:
+    - docker login -u ${DOCKER_HUB_USER_NAME} -p ${DOCKER_HUB_PASSWD}
+    - docker build -f patient-api.Dockerfile -t ${DOCKER_IMAGE_NAME_PATIENT_API}:${DOCKER_TAG} .
+    - docker push ${DOCKER_IMAGE_NAME_PATIENT_API}:${DOCKER_TAG} 
+
+build-frontend:
+  stage: build
+  script:
+    - docker login -u ${DOCKER_HUB_USER_NAME} -p ${DOCKER_HUB_PASSWD}
+    - cd ui-vue
+    - docker build -f Dockerfile -t ${DOCKER_IMAGE_NAME_FRONTEND}:${DOCKER_TAG} .
+    - docker push ${DOCKER_IMAGE_NAME_FRONTEND}:${DOCKER_TAG}
+
+deploy-to-ec2:
+  stage: deploy
+  image:
+    name: alpine
+  before_script:
+    - apk add openssh-client
+    - eval $(ssh-agent -s)
+    - echo "${SSH_PRIVATE_KEY}" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+  script:
+    - ssh -v -o StrictHostKeyChecking=no ${SSH_USER}@${SSH_HOST} "sudo docker rm -f appointments-api && sudo docker run -itd --name appointments-api -p8081:8081 ${DOCKER_IMAGE_NAME_APPOINTMENT_API}:${DOCKER_TAG}"   
+    - ssh -v -o StrictHostKeyChecking=no ${SSH_USER}@${SSH_HOST} "sudo docker rm -f doctor-api && sudo docker run -itd --name doctor-api -p8082:8082 ${DOCKER_IMAGE_NAME_DOCTOR_API}:${DOCKER_TAG}" 
+    - ssh -v -o StrictHostKeyChecking=no ${SSH_USER}@${SSH_HOST} "sudo docker rm -f patient-api && sudo docker run -itd --name patient-api -p8083:8083 ${DOCKER_IMAGE_NAME_PATIENT_API}:${DOCKER_TAG}"
+    - ssh -v -o StrictHostKeyChecking=no ${SSH_USER}@${SSH_HOST} "sudo docker rm -f frontend-api && sudo docker run -itd --name frontend-api -p8084:80 ${DOCKER_IMAGE_NAME_FRONTEND}:${DOCKER_TAG}"
